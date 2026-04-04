@@ -1,0 +1,7 @@
+.idea/
+.vscode/
+frontend/
+mobile-app/
+management-system/
+package.json
+package-lock.json
