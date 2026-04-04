@@ -1,13 +1,14 @@
 # Render Deployment Guide: CuraFlow Backend
 
-This guide walks you through preparing and deploying the Java Spring Boot backend (`backend`) to Render.
+This guide walks you through preparing and deploying the Java Spring Boot backend (`backend`) to Render with Docker.
 
-The backend is configured through environment variables, and `render.yaml` is included so the service can be created through a Render Blueprint.
+The backend is configured through environment variables, includes a multi-stage `Dockerfile`, and ships with `render.yaml` so the service can be created through a Render Blueprint.
 
 ## What Was Changed
 - Extracted MySQL credentials, `JWT_SECRET`, and `server.port` into environment variables (`DB_URL`, `DB_USER`, `DB_PASS`, `PORT`, `JWT_SECRET`)
-- Kept local defaults in `application.properties` so the app can still run locally without extra setup
-- Added `render.yaml` as Infrastructure-as-Code for Render
+- Removed the hardcoded JWT fallback so production requires `JWT_SECRET`
+- Added a multi-stage `Dockerfile` for Render builds
+- Updated `render.yaml` to deploy the backend as a Docker web service on Render
 
 ## 1. Database Setup First
 Render does not natively provision MySQL like it does PostgreSQL, so you should:
@@ -26,17 +27,25 @@ Once provisioned, note the host, port, database name, username, and password.
 ### Next Steps on Render
 1. Sign in to [Render.com](https://dashboard.render.com).
 2. Open **Blueprints** and create a new Blueprint instance.
-3. Connect your GitHub repository.
+3. Connect your GitHub repository and point Render to `backend/render.yaml` if it does not auto-detect the file.
 4. When Render reads `render.yaml`, provide these environment variables:
    - `DB_URL`: `jdbc:mysql://<your-cloud-db-host>:3306/<db_name>?useSSL=false&allowPublicKeyRetrieval=true`
    - `DB_USER`: your MySQL username
    - `DB_PASS`: your MySQL password
-   - `JWT_SECRET`: a secure random Base64 string
+   - `PORT`: `10000` if you want to set it explicitly
 5. Apply the Blueprint.
 
-Render will run the configured build command and start command, and inject the service port through `PORT`.
+Render will build the image from `backend/Dockerfile` and inject the service port through `PORT`. The provided `render.yaml` asks Render to generate a random base64 `JWT_SECRET` automatically during initial Blueprint creation.
 
-## 3. Updating the Frontend
+## 3. Local Docker Smoke Test
+From the `backend` directory, build and run locally with:
+
+```bash
+docker build -t curaflow-backend .
+docker run --rm -p 10000:10000 -e PORT=10000 -e JWT_SECRET=<base64-secret> -e DB_URL=jdbc:mysql://host:3306/db -e DB_USER=<user> -e DB_PASS=<pass> curaflow-backend
+```
+
+## 4. Updating the Frontend
 Once Render deploys the backend, it will provide a public URL such as `https://curaflow-backend-api.onrender.com`.
 
 Update the frontend and mobile app API base URLs to point at that deployed backend:
