@@ -2,6 +2,7 @@ package com.healthcare.management_system.controller;
 
 import com.healthcare.management_system.dto.ApiResponse;
 import com.healthcare.management_system.dto.AppointmentRequest;
+import com.healthcare.management_system.dto.AppointmentRescheduleRequest;
 import com.healthcare.management_system.dto.AppointmentResponse;
 import com.healthcare.management_system.entity.User;
 import com.healthcare.management_system.service.AppointmentService;
@@ -53,6 +54,19 @@ public class AppointmentController {
                     String.valueOf(response.getId()), "Cancelled appointment with Dr. " + response.getDoctorName());
         }
         return ResponseEntity.ok(ApiResponse.success("Appointment cancelled successfully", response));
+    }
+
+    @PutMapping("/{id}/reschedule")
+    public ResponseEntity<ApiResponse<AppointmentResponse>> rescheduleAppointment(
+            @PathVariable Long id,
+            @AuthenticationPrincipal User user,
+            @Valid @RequestBody AppointmentRescheduleRequest request) {
+        AppointmentResponse response = appointmentService.rescheduleAppointment(id, user, request);
+        if ("PATIENT".equals(user.getRole().name())) {
+            auditLogService.log(user, patientService.getPatientEntity(user), "RESCHEDULE_APPOINTMENT", "APPOINTMENT",
+                    String.valueOf(response.getId()), "Rescheduled appointment with Dr. " + response.getDoctorName());
+        }
+        return ResponseEntity.ok(ApiResponse.success("Appointment rescheduled successfully", response));
     }
 
     @PutMapping("/{id}/complete")
