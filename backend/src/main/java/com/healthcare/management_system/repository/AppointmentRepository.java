@@ -21,6 +21,8 @@ public interface AppointmentRepository extends JpaRepository<Appointment, Long> 
             com.healthcare.management_system.enums.AppointmentStatus status);
     List<Appointment> findByDoctorAndAppointmentDateTimeBetween(
             Doctor doctor, LocalDateTime start, LocalDateTime end);
+    List<Appointment> findByDoctorAndAppointmentDateTimeBetweenAndIdNot(
+            Doctor doctor, LocalDateTime start, LocalDateTime end, Long id);
     @org.springframework.data.jpa.repository.Query("SELECT a FROM Appointment a WHERE " +
             "(:hospitalId IS NULL OR a.doctor.user.hospital.id = :hospitalId) AND " +
             "(:doctorId IS NULL OR a.doctor.id = :doctorId) AND " +

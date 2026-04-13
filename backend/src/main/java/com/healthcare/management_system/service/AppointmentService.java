@@ -1,6 +1,7 @@
 package com.healthcare.management_system.service;
 
 import com.healthcare.management_system.dto.AppointmentRequest;
+import com.healthcare.management_system.dto.AppointmentRescheduleRequest;
 import com.healthcare.management_system.dto.AppointmentResponse;
 import com.healthcare.management_system.entity.Appointment;
 import com.healthcare.management_system.entity.Doctor;
@@ -87,6 +88,40 @@ public class AppointmentService {
         }
 
         appointment.setStatus(AppointmentStatus.CANCELLED);
+        appointment = appointmentRepository.save(appointment);
+        return mapToResponse(appointment);
+    }
+
+    @Transactional
+    public AppointmentResponse rescheduleAppointment(Long appointmentId, User user, AppointmentRescheduleRequest request) {
+        Appointment appointment = appointmentRepository.findById(appointmentId)
+                .orElseThrow(() -> new ResourceNotFoundException("Appointment not found with id: " + appointmentId));
+
+        validateAppointmentAccess(user, appointment, "reschedule");
+
+        if (appointment.getStatus() != AppointmentStatus.SCHEDULED) {
+            throw new BadRequestException("Only scheduled appointments can be rescheduled");
+        }
+
+        if (request.getAppointmentDateTime().isBefore(LocalDateTime.now())) {
+            throw new BadRequestException("Appointment date must be in the future");
+        }
+
+        LocalDateTime start = request.getAppointmentDateTime().minusMinutes(30);
+        LocalDateTime end = request.getAppointmentDateTime().plusMinutes(30);
+        List<Appointment> conflicts = appointmentRepository
+                .findByDoctorAndAppointmentDateTimeBetweenAndIdNot(appointment.getDoctor(), start, end, appointment.getId());
+
+        if (!conflicts.isEmpty()) {
+            throw new BadRequestException("Doctor is not available at the requested time");
+        }
+
+        appointment.setAppointmentDateTime(request.getAppointmentDateTime());
+        if (request.getNotes() != null && !request.getNotes().isBlank()) {
+            String existingNotes = appointment.getNotes() == null ? "" : appointment.getNotes() + "\n";
+            appointment.setNotes(existingNotes + "Rescheduled: " + request.getNotes().trim());
+        }
+
         appointment = appointmentRepository.save(appointment);
         return mapToResponse(appointment);
     }
@@ -179,5 +214,18 @@ public class AppointmentService {
                 .notes(appointment.getNotes())
                 .createdAt(appointment.getCreatedAt())
                 .build();
+    }
+
+    private void validateAppointmentAccess(User user, Appointment appointment, String action) {
+        boolean isPatient = appointment.getPatient().getUser().getId().equals(user.getId());
+        boolean isDoctor = appointment.getDoctor().getUser().getId().equals(user.getId());
+        boolean isHospitalOperator = (user.getRole() == Role.ADMIN || user.getRole() == Role.RECEPTIONIST)
+                && user.getHospital() != null
+                && appointment.getDoctor().getUser().getHospital() != null
+                && appointment.getDoctor().getUser().getHospital().getId().equals(user.getHospital().getId());
+
+        if (!isPatient && !isDoctor && !isHospitalOperator) {
+            throw new BadRequestException("You are not authorized to " + action + " this appointment");
+        }
     }
 }
