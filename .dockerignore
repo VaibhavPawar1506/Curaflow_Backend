@@ -1,0 +1,8 @@
+target/
+.git/
+.idea/
+.vscode/
+*.log
+build/
+docs/
+src/bin/
