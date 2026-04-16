@@ -1,53 +1,124 @@
-# Render Deployment Guide: CuraFlow Backend
+﻿# Render Web Service Deployment: CuraFlow Backend
 
-This guide walks you through preparing and deploying the Java Spring Boot backend (`backend`) to Render with Docker.
+This backend is prepared for deployment as a manual Render **Web Service** using Docker. It does not require a Render Blueprint.
 
-The backend is configured through environment variables, includes a multi-stage `Dockerfile`, and ships with `render.yaml` so the service can be created through a Render Blueprint.
+## What Is Configured
 
-## What Was Changed
-- Extracted MySQL credentials, `JWT_SECRET`, and `server.port` into environment variables (`DB_URL`, `DB_USER`, `DB_PASS`, `PORT`, `JWT_SECRET`)
-- Removed the hardcoded JWT fallback so production requires `JWT_SECRET`
-- Added a multi-stage `Dockerfile` for Render builds
-- Updated `render.yaml` to deploy the backend as a Docker web service on Render
+- Spring Boot reads Render's `PORT` environment variable with a safe default of `10000`.
+- PostgreSQL settings come from environment variables: `DB_URL`, `DB_USER`, and `DB_PASS`.
+- `JWT_SECRET` is required in production and no longer has a hardcoded fallback.
+- SQL debug logging is disabled by default for cleaner Render logs.
+- File uploads default to `/tmp/curaflow/prescriptions`, which is ephemeral on Render unless you attach persistent storage.
+- The Dockerfile builds the Maven app and runs the packaged Spring Boot jar.
 
-## 1. Database Setup First
-Render does not natively provision MySQL like it does PostgreSQL, so you should:
-- provision a MySQL database on an external provider such as Aiven, PlanetScale, or a hosted MySQL instance.
-- alternatively, deploy a MySQL Docker container on Render (more complex).
+## 1. Prepare PostgreSQL
 
-Once provisioned, note the host, port, database name, username, and password.
+Create a PostgreSQL database before deploying the web service. You can use Render PostgreSQL or another hosted PostgreSQL provider.
 
-`spring.jpa.hibernate.ddl-auto=update` is still enabled by default, so on first startup Hibernate will create or update the schema automatically and the seeded demo accounts can be inserted by the backend startup flow.
+You need these values:
 
-## 2. Deploying to Render via GitHub
-### Next Steps for GitHub
-1. Commit the backend changes, including `application.properties` and `render.yaml` from the `backend` folder.
-2. Push your code to the branch you want Render to track.
+- Database host
+- Database port, usually `5432`
+- Database name
+- Database username
+- Database password
 
-### Next Steps on Render
-1. Sign in to [Render.com](https://dashboard.render.com).
-2. Open **Blueprints** and create a new Blueprint instance.
-3. Connect your GitHub repository and point Render to `backend/render.yaml` if it does not auto-detect the file.
-4. When Render reads `render.yaml`, provide these environment variables:
-   - `DB_URL`: `jdbc:mysql://<your-cloud-db-host>:3306/<db_name>?useSSL=false&allowPublicKeyRetrieval=true`
-   - `DB_USER`: your MySQL username
-   - `DB_PASS`: your MySQL password
-   - `PORT`: `10000` if you want to set it explicitly
-5. Apply the Blueprint.
+Your backend expects the JDBC URL format:
 
-Render will build the image from `backend/Dockerfile` and inject the service port through `PORT`. The provided `render.yaml` asks Render to generate a random base64 `JWT_SECRET` automatically during initial Blueprint creation.
-
-## 3. Local Docker Smoke Test
-From the `backend` directory, build and run locally with:
-
-```bash
-docker build -t curaflow-backend .
-docker run --rm -p 10000:10000 -e PORT=10000 -e JWT_SECRET=<base64-secret> -e DB_URL=jdbc:mysql://host:3306/db -e DB_USER=<user> -e DB_PASS=<pass> curaflow-backend
+```text
+jdbc:postgresql://<host>:5432/<database_name>
 ```
 
-## 4. Updating the Frontend
-Once Render deploys the backend, it will provide a public URL such as `https://curaflow-backend-api.onrender.com`.
+If Render gives you a URL like `postgresql://user:pass@host:5432/db`, convert it to the JDBC format above and put the username/password into `DB_USER` and `DB_PASS`.
 
-Update the frontend and mobile app API base URLs to point at that deployed backend:
-- `frontend/src/api/api.js`
-- `mobile-app/src/api/api.js`
+## 2. Create The Render Web Service
+
+In Render:
+
+1. Click **New +**.
+2. Choose **Web Service**.
+3. Connect the GitHub repository that contains this backend.
+4. Choose the branch you want to deploy.
+5. Set **Runtime** to **Docker**.
+6. If the repository root is this `backend` folder, leave **Root Directory** empty.
+7. If this backend is inside a larger monorepo on GitHub, set **Root Directory** to `backend`.
+8. Use the default Dockerfile path: `Dockerfile`.
+9. Choose an instance type.
+10. Add the environment variables below.
+11. Click **Create Web Service**.
+
+## 3. Required Environment Variables
+
+Set these in the Render Web Service environment tab:
+
+```text
+PORT=10000
+DB_URL=jdbc:postgresql://<host>:5432/<database_name>
+DB_USER=<database_user>
+DB_PASS=<database_password>
+JWT_SECRET=<base64_32_byte_or_longer_secret>
+JWT_EXPIRATION_MS=86400000
+DB_DDL_AUTO=update
+DEFAULT_HOSPITAL_CODE=HOSP001
+```
+
+Generate `JWT_SECRET` locally with PowerShell:
+
+```powershell
+[Convert]::ToBase64String((1..32 | ForEach-Object { Get-Random -Maximum 256 }))
+```
+
+Or with OpenSSL:
+
+```bash
+openssl rand -base64 32
+```
+
+## 4. Optional Environment Variables
+
+```text
+JPA_SHOW_SQL=false
+HIBERNATE_FORMAT_SQL=false
+JPA_OPEN_IN_VIEW=false
+FILE_UPLOAD_DIR=/tmp/curaflow/prescriptions
+```
+
+Use a Render persistent disk if uploaded prescription files must survive redeploys/restarts. If you attach a disk, set `FILE_UPLOAD_DIR` to a path on that disk.
+
+## 5. Local Validation
+
+From this backend folder:
+
+```powershell
+.\mvnw.cmd -q -DskipTests compile
+.\mvnw.cmd test
+```
+
+Local Docker smoke test:
+
+```powershell
+docker build -t curaflow-backend .
+docker run --rm -p 10000:10000 `
+  -e PORT=10000 `
+  -e DB_URL=jdbc:postgresql://host.docker.internal:5432/healthcare_db `
+  -e DB_USER=postgres `
+  -e DB_PASS=tiger `
+  -e JWT_SECRET=<base64-secret> `
+  curaflow-backend
+```
+
+Then open:
+
+```text
+http://localhost:10000/swagger-ui.html
+```
+
+## 6. After Deployment
+
+Render will give you a public backend URL like:
+
+```text
+https://curaflow-backend-api.onrender.com
+```
+
+Update the frontend and mobile app API base URLs to use that deployed backend URL.
