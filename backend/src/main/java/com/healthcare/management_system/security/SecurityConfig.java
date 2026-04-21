@@ -40,7 +40,8 @@ public class SecurityConfig {
                                 "/swagger-ui/**",
                                 "/swagger-ui.html",
                                 "/v3/api-docs/**",
-                                "/api-docs/**"
+                                "/api-docs/**",
+                                "/error"
                         ).permitAll()
                         // All other endpoints require authentication
                         .anyRequest().authenticated()
@@ -57,9 +58,17 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(List.of("*"));
-        configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
-        configuration.setAllowedHeaders(Arrays.asList("Authorization", "Content-Type", "X-Requested-With"));
+        // Explicit origins required when sending Authorization headers (wildcard * is rejected by browsers)
+        configuration.setAllowedOrigins(Arrays.asList(
+                "http://localhost:3000",    // CRA default
+                "http://localhost:5173",    // Vite default
+                "http://localhost:5174"     // Vite fallback port
+                // Add your deployed frontend URL here when you deploy the React app, e.g.:
+                // "https://curaflow-frontend.onrender.com"
+        ));
+        configuration.setAllowCredentials(true);
+        configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
+        configuration.setAllowedHeaders(Arrays.asList("Authorization", "Content-Type", "X-Requested-With", "Accept", "Origin"));
         configuration.setExposedHeaders(List.of("Authorization"));
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
